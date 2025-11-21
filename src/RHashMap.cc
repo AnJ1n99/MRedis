@@ -113,3 +113,19 @@ void hm_insert(HMap *hmap, HNode *node) {
     }
     hm_help_rehashing(hmap);        // migrate some keys
 }
+
+static bool h_foreach(HTab *htab, bool (*f)(HNode *node, void *), void *arg) {
+                                        // mask = n - 1 !!!
+    for (size_t i = 0; htab->mask != 0 && i <= htab->mask; i++) {
+        for (auto node = htab->tab[i]; node != NULL; node = node->next) {
+            if (!f(node, arg)) {
+                return false;
+            } 
+        }
+    }
+    return true;
+}
+// invokes the callback on each item.
+void hm_foreach(HMap *hmap, bool (*f)(HNode *node, void *), void *arg) {
+    h_foreach(&hmap->newer, f, arg) && h_foreach(&hmap->older, f, arg);
+}

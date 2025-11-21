@@ -6,6 +6,7 @@
 
 const size_t k_max_load_factor = 8;
 
+// hashtable node, should be embedded into the payload
 struct HNode {
     HNode *next = NULL;
     uint64_t hcode = 0;
@@ -27,5 +28,7 @@ struct HMap {
 };
 
 HNode *hm_lookup(HMap *hmap, HNode *key, bool (*eq)(HNode *, HNode *));
-void hm_insert(HMap *hmap, HNode *node);
+void   hm_insert(HMap *hmap, HNode *node);
 HNode *hm_delete(HMap *hmap, HNode *key, bool (*eq)(HNode *, HNode *));
+// invoke the callback on each node until it returns false
+void   hm_foreach(HMap *hmap, bool (*f)(HNode *node, void *), void *arg);
