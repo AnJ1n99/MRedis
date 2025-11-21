@@ -1,0 +1,115 @@
+#include "../include/RHashMap.h"
+#include <cstddef>
+#include <cstdlib>
+
+// 每次移动常数个
+const size_t k_rehashing_work = 128;
+
+//init
+static void h_init(HTab *htab, size_t n) {
+    assert(n > 0 && ((n - 1) & n) == 0);    // n must be a power of 2
+    // use calloc
+    htab->tab = (HNode **)calloc(n, sizeof(HNode *));
+    htab->mask = n - 1;
+    htab->size = 0;
+}
+
+// Linked list insertion
+static void h_insert(HTab *htab, HNode *node) {
+    size_t pos = node->hcode & htab->mask; // node->hcode % (n - 1)
+    node->next = htab->tab[pos];
+    htab->tab[pos] = node;
+    htab->size++;
+}
+
+// look up (t compares the hash value before calling the callback)
+// return the father pointer
+static HNode** h_lookup(HTab *htab, HNode *key, bool(*eq)(HNode *, HNode *)) {
+    if (!htab->tab) {
+        return NULL;
+    }
+
+    size_t pos = key->hcode & htab->mask;
+    // from指向目标节点的指针的指针（即前驱的 next 字段地址)
+    HNode **from = &htab->tab[pos]; // incoming pointer to the target
+
+    for (HNode *cur; (cur = *from) != NULL; from = &cur->next) {
+        if (cur->hcode == key->hcode && eq(cur, key)) {
+            return from;
+        }
+    }
+    return NULL;
+}
+
+// del
+static HNode* h_detach(HTab* htab, HNode** from) {
+    HNode* node = *from;
+    *from = node->next;
+    htab->size--;
+    return node;
+}
+
+static void hm_trigger_rehashing(HMap *hmap) {
+    hmap->older = hmap->newer;
+    h_init(&hmap->newer, (hmap->newer.mask + 1)*2);
+    hmap->migrate_pos = 0;
+}
+
+// 一个用于辅助哈希表渐进式扩容的静态函数
+// 它在哈希表扩容期间，将旧哈希表中的部分键值对迁移到新表中，以分摊扩容成本。
+static void hm_help_rehashing(HMap *hmap) {
+    size_t nwork = 0;
+    while (nwork < k_rehashing_work && hmap->older.size > 0 ) {
+        // 找到一个非空席位
+        HNode** from = &hmap->older.tab[hmap->migrate_pos];
+        if (!*from) {
+            hmap->migrate_pos++;
+            continue; // empty slot
+        }
+        // move the first list item to the newer table
+        h_insert(&hmap->newer, h_detach(&hmap->older, from));
+        nwork++;
+    }
+    // discard the old table if done
+    if (hmap->older.size == 0 && hmap->older.tab) {
+        free(hmap->older.tab);
+        hmap->older = HTab{};
+    }
+}
+
+// get set del API
+HNode *hm_lookup(HMap *hmap, HNode *key, bool (*eq)(HNode *, HNode *)) {
+    hm_help_rehashing(hmap);
+    HNode** from = h_lookup(&hmap->newer, key, eq);
+    if (!from) {
+        from = h_lookup(&hmap->older, key, eq);
+    }
+    return from ? *from : NULL;
+}
+
+HNode *hm_delete(HMap *hmap, HNode *key, bool (*eq)(HNode *, HNode *)) {
+    hm_help_rehashing(hmap);
+    if (HNode **from = h_lookup(&hmap->newer, key, eq)) {
+        return h_detach(&hmap->newer, from);
+    }
+    if (HNode **from = h_lookup(&hmap->older, key, eq)) {
+        return h_detach(&hmap->older, from);
+    }
+    return NULL;
+}
+
+void hm_insert(HMap *hmap, HNode *node) {
+    if (!hmap->newer.tab) {
+        h_init(&hmap->newer, 4);
+    }
+
+    h_insert(&hmap->newer, node);
+
+    if (!hmap->older.tab) {
+        size_t shreshold = (hmap->newer.mask + 1) * k_max_load_factor;
+        if (hmap->newer.size >= shreshold) {
+            hm_trigger_rehashing(hmap);
+        }
+    }
+    hm_help_rehashing(hmap);        // migrate some keys
+}
