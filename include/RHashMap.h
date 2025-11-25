@@ -13,7 +13,6 @@ struct HNode {
 };
 
 // Define the fixed-size hashtable
-
 struct HTab {
     HNode **tab = NULL; // array of slots
     size_t mask = 0;    // power of 2 array size

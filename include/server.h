@@ -139,6 +139,21 @@ static void do_del(std::vector<std::string> &cmd, Buffer &out) {
   return out_int(out, node ? 1 : 0);
 }
 
+//               add 'keys' command ->  KEYS 命令是 Redis 中用于查找符合给定模式的所有 key 的命令 
+
+// 将数据库中每个条目的键（key）写入输出缓冲区
+static bool cb_keys(HNode *node, void *arg) {
+	Buffer &out = *(Buffer *)arg;  // 传递的上下文，此处为指向 Buffer 的指针，用于写入响应
+	const std::string &key = container_of(node, Entry, node)->key;
+	out_str(out, key.data(), key.size());
+	return true;
+}
+
+static void do_keys(std::vector<std::string> &, Buffer &out) {
+	out_arr(out, (uint32_t)hm_size(&g_data.db));
+	hm_foreach(&g_data.db, &cb_keys, (void*)&out);
+}
+
 static void response_begin(Buffer &out, size_t *header) {
 	*header = out.size();                       // message header pos
 	buf_append_u32(out, 0);          // reserve space
@@ -170,3 +185,4 @@ static bool try_one_request(Conn *conn) {
 	do_request(cmd, conn->outgoing);
 	response_end(conn->outgoing, header_pos);
 }
+
